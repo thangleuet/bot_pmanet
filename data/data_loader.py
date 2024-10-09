@@ -1,4 +1,5 @@
 import os
+import joblib
 import numpy as np
 import pandas as pd
 
@@ -203,6 +204,7 @@ class Dataset_Custom(Dataset):
         assert flag in ['train', 'test', 'val']
         type_map = {'train':0, 'val':1, 'test':2}
         self.set_type = type_map[flag]
+        self.flag = flag
         
         self.features = features
         self.target = target
@@ -254,6 +256,8 @@ class Dataset_Custom(Dataset):
             train_data = df_data[border1s[0]:border2s[0]]
             self.scaler.fit(train_data.values)
             data = self.scaler.transform(df_data.values)
+            if self.flag=='train':
+                joblib.dump(self.scaler, 'scaler.pkl')
         else:
             data = df_data.values
             

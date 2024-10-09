@@ -14,9 +14,9 @@ parser.add_argument('--model', type=str, default='informer',help='model of exper
 # 选择数据类型，这里有ETTh1，ETTh2，ETTm1，ETTm2，WTH和custom的选择，其中前几个为官方给的数据类型，如果使用自己的数据集训练，则可选择custom，但需要在本文件下面定义custom
 parser.add_argument('--data', type=str, default='custom', help='data')
 # 选择数据位置，这里的是相对根目录的相对路径
-parser.add_argument('--root_path', type=str, default='./test', help='root path of the data file')
+parser.add_argument('--root_path', type=str, default='train', help='root path of the data file')
 # 数据名称
-parser.add_argument('--data_path', type=str, default='exness_xau_usd_m30_2023_test.csv', help='data file')
+parser.add_argument('--data_path', type=str, default='exness_xau_usd_m30_2020_2021_2022_train.csv', help='data file')
 # 选择进行时序预测的类型，M为使用多变量时间序列作为输入，预测多变量的时间序列作为输出；S为使用单变量时间序列作为输入，预测单变量的时间序列作为输出；MS为使用多变量的时间序列作为输入，预测单变量的时间序列作为输出；
 parser.add_argument('--features', type=str, default='MS', help='forecasting task, options:[M, S, MS]; M:multivariate predict multivariate, S:univariate predict univariate, MS:multivariate predict univariate')
 # 这里的target参数即为在你的csv数据中你想预测的变量，比如我想预测开盘价，我的csv文件中为open，这里则是open
@@ -99,6 +99,7 @@ for ii in range(args.itr):
     exp = Exp(args) # set experiments
     print('>>>>>>>start training : {}>>>>>>>>>>>>>>>>>>>>>>>>>>'.format(setting))
     exp.train(setting)
+    # exp.analyze_model()
     
     print('>>>>>>>testing : {}<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<'.format(setting))
     # exp.test(setting)

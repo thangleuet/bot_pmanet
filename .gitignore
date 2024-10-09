@@ -4,3 +4,5 @@ env
 checkpoints
 .idea/
 *.pyc
+train
+weight

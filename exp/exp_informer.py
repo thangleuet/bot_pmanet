@@ -1,6 +1,10 @@
+import joblib
+import pandas as pd
 from data.data_loader import Dataset_ETT_hour, Dataset_ETT_minute, Dataset_Custom, Dataset_Pred
 from exp.exp_basic import Exp_Basic
+from exp.pattern_model import PatternModel
 from models.model import Informer, InformerStack
+from utils.timefeatures import time_features
 
 from utils.tools import EarlyStopping, adjust_learning_rate, visual
 from utils.metrics import metric
@@ -14,6 +18,7 @@ from torch.utils.data import DataLoader
 
 import os
 import time
+import tqdm
 
 import warnings
 
@@ -128,19 +133,21 @@ class Exp_Informer(Exp_Basic):
 
         return criterion
 
-    def vali(self, vali_data, vali_loader, criterion, epoch):
+    def vali(self, train_data, vali_loader, criterion, epoch):
         self.model.eval()
         total_loss = []
         for i, (batch_x,batch_y,batch_x_mark,batch_y_mark) in enumerate(vali_loader):
             pred, true = self._process_one_batch(
-                vali_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
+                train_data, batch_x, batch_y, batch_x_mark, batch_y_mark)
             loss = criterion(pred.detach().cpu(), true.detach().cpu())
             total_loss.append(loss)
 
-            outputs = pred.detach().cpu().numpy()
-            batch_y = true.detach().cpu().numpy()
-            pred = outputs
-            true = batch_y
+            # innvert scaling
+            pred = train_data.inverse_transform(pred)
+            true = train_data.inverse_transform(true)
+
+            pred = pred.detach().cpu().numpy()
+            true = true.detach().cpu().numpy()
 
             folder_result = f'test_results/{epoch}'
 
@@ -148,6 +155,7 @@ class Exp_Informer(Exp_Basic):
                 os.makedirs(folder_result)
 
             if i % 1 == 0:
+                batch_x = train_data.inverse_transform(batch_x)
                 input = batch_x.detach().cpu().numpy()
                 gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                 pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
@@ -226,7 +234,7 @@ class Exp_Informer(Exp_Basic):
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
             train_loss = np.average(train_loss)  # 计算每个epoch的训练的loss值的平均值
             train_losses.append(train_loss)  # 将每个epoch的训练的loss值添加到train_losses列表中
-            vali_loss = self.vali(vali_data, vali_loader, criterion, epoch)  # 计算每个epoch的验证的loss值
+            vali_loss = self.vali(train_data, vali_loader, criterion, epoch)  # 计算每个epoch的验证的loss值
             vali_losses.append(vali_loss)  # 将每个epoch的验证的loss值添加到vali_losses列表中
     
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
@@ -242,6 +250,237 @@ class Exp_Informer(Exp_Basic):
         self.model.load_state_dict(torch.load(best_model_path))
 
         return self.model
+
+    def analyze_model(self):
+        self.model.load_state_dict(torch.load(os.path.join('weight', 'checkpoint_97.pth'), map_location=self.device))
+        self.model.eval()
+
+        df_raw_test = pd.read_csv(r"test/exness_xau_usd_m30_2024_test.csv")
+        # df_raw_test.columns = ['Date', 'Time', 'Open', 'High', 'Low', 'Close', 'volume'] 
+        df_stamp = df_raw_test[['Date']]
+        # data_stamp = time_features(pd.to_datetime(df_stamp.Date), freq='h')
+
+        df_stamp['date'] = pd.to_datetime(df_stamp.Date)
+        data_stamp = time_features(df_stamp, timeenc=0, freq=self.args.freq)
+
+        self.data = df_raw_test[['Open', 'High', 'Low', 'volume', 'Close']].values
+
+        list_mae = []
+        list_pattern_predict = []
+
+        for i, data_candle in tqdm.tqdm(enumerate(self.data)):
+            mae, list_zigzag_true, list_zigzag_pred, gt, pred, actual, path_image, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred = self.inference(i, data_stamp)
+        #     list_mae.append(mae)
+        #     if len(list_zigzag_pred) > 0:
+        #         if len(list_pattern_predict) == 0:
+        #                 pattern_model = PatternModel(list_zigzag_pred, list_zigzag_true, i, gt, pred, actual, path_image, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred)
+        #                 list_pattern_predict.append(pattern_model)
+        #         else:
+        #             last_pattern_model = list_pattern_predict[-1]
+        #             if last_pattern_model.list_zigzag_pred[0][2] == list_zigzag_pred[0][2]:
+        #                 last_pattern_model.confirm_count += 1
+        #                 last_pattern_model.list_zigzag_true = list_zigzag_true
+        #                 last_pattern_model.list_zigzag_pred = list_zigzag_pred
+        #                 last_pattern_model.index_candle = i
+        #                 last_pattern_model.path_image = path_image
+        #                 last_pattern_model.actual = actual
+        #                 last_pattern_model.pred = pred
+        #                 last_pattern_model.gt = gt
+        #                 last_pattern_model.x_zigzag_data_true = x_zigzag_data_true
+        #                 last_pattern_model.y_zigzag_data_true = y_zigzag_data_true
+        #                 last_pattern_model.x_zigzag_data_pred = x_zigzag_data_pred
+        #                 last_pattern_model.y_zigzag_data_pred = y_zigzag_data_pred
+
+        #             else:
+        #                 pattern_model = PatternModel(list_zigzag_pred, list_zigzag_true, i, gt, pred, actual, path_image, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred)
+        #                 list_pattern_predict.append(pattern_model)
+
+        # count_confirm_pattern = 0     
+        # count_confirm_corection = 0              
+        # for pattern_model in list_pattern_predict:
+        #     if pattern_model.confirm_count >= 5 and len(pattern_model.list_zigzag_pred) > 1:
+        #         count_confirm_pattern += 1
+        #         # if len(pattern_model.list_zigzag_pred) > 1 and len(pattern_model.list_zigzag_true) > 1:
+        #         if pattern_model.list_zigzag_pred[0][2] == pattern_model.list_zigzag_true[0][2]:
+        #             count_confirm_corection += 1
+        #             path_image = pattern_model.path_image
+        #             visual(pattern_model.gt, pattern_model.pred, pattern_model.actual, pattern_model.x_zigzag_data_true, pattern_model.y_zigzag_data_true, pattern_model.x_zigzag_data_pred, pattern_model.y_zigzag_data_pred, self.args.seq_len, path_image)
+        #         else:
+        #             path_image = pattern_model.path_image.replace('correction', 'fail')
+        #             if not os.path.exists(os.path.dirname(path_image)): 
+        #                 os.makedirs(os.path.dirname(path_image)) 
+        #             visual(pattern_model.gt, pattern_model.pred, pattern_model.actual, pattern_model.x_zigzag_data_true, pattern_model.y_zigzag_data_true, pattern_model.x_zigzag_data_pred, pattern_model.y_zigzag_data_pred, self.args.seq_len, path_image)
+        #         # else:
+        #         #     path_image = pattern_model.path_image.replace('correction', 'fail')
+        #         #     if not os.path.exists(os.path.dirname(path_image)): 
+        #         #         os.makedirs(os.path.dirname(path_image))
+        #         #     visual(pattern_model.gt, pattern_model.pred, pattern_model.actual, pattern_model.x_zigzag_data_true, pattern_model.y_zigzag_data_true, pattern_model.x_zigzag_data_pred, pattern_model.y_zigzag_data_pred, self.args.seq_len, path_image)
+
+        #     print(f'Index: {pattern_model.index_candle} count: {pattern_model.confirm_count} list_type_pred: {pattern_model.list_zigzag_pred} list_type_true: {pattern_model.list_zigzag_true}')
+        
+        # print(f'Count confirm pattern: {count_confirm_pattern}/{len(list_pattern_predict)}')
+        # print(f'Count confirm corection: {count_confirm_corection}/{count_confirm_pattern}')
+        
+
+    def inference(self, index_candle, data_stamp):
+        s_end = index_candle
+        s_begin = s_end - self.args.seq_len
+        r_begin = s_end - self.args.label_len
+        r_end = index_candle + self.args.pred_len
+        if index_candle <= self.args.seq_len or r_end >= len(self.data):
+            return None, [], [], None, None, None, None, None, None, None, None
+
+        batch_x = self.data[s_begin:s_end]
+        batch_y = self.data[r_begin:r_end]
+        batch_x_mark = data_stamp[s_begin:s_end]
+        batch_y_mark = data_stamp[r_begin:r_end]
+
+        actual = self.data[s_begin:r_end][:, -1]
+
+        batch_x = torch.from_numpy(batch_x).float().unsqueeze(0).to(self.device)
+        batch_y = torch.from_numpy(batch_y).float().unsqueeze(0).to(self.device)
+        batch_x_mark = torch.from_numpy(batch_x_mark).float().unsqueeze(0).to(self.device)
+        batch_y_mark = torch.from_numpy(batch_y_mark).float().unsqueeze(0).to(self.device)
+
+        train_scaler = joblib.load('scaler.pkl')
+        pred, true = self._process_one_batch(
+                train_scaler, batch_x, batch_y, batch_x_mark, batch_y_mark)
+
+        pred = pred.detach().cpu().numpy()
+        true = true.detach().cpu().numpy()
+
+        folder_path = 'results'
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+
+        if visual:
+            input = batch_x.detach().cpu().numpy()
+            gt = np.concatenate((input[0, :, -1], true[0, :self.args.pred_len, -1]), axis=0)
+            pd = np.concatenate((input[0, :, -1], pred[0, :self.args.pred_len, -1]), axis=0)
+            true_max_idx = np.argmax(true[0, :self.args.pred_len, -1]) + input[0, :, -1].shape[0]
+            true_min_idx = np.argmin(true[0, :self.args.pred_len, -1]) + input[0, :, -1].shape[0]
+
+            pd_max_idx = np.argmax(pred[0, :self.args.pred_len, -1]) + input[0, :, -1].shape[0]
+            pd_min_idx = np.argmin(pred[0, :self.args.pred_len, -1]) + input[0, :, -1].shape[0]
+
+            mae = np.mean(np.abs(pred[0, :self.args.pred_len, -1] - true[0, :self.args.pred_len, -1]))
+
+            list_y_candle_true = np.concatenate((input[0, :, ], true[0, :, ]), axis=0)
+            list_y_candle_pred = np.concatenate((input[0, :, ], pred[0, :, ]), axis=0)
+
+            x_zigzag_data_true, y_zigzag_data_true, type_zigzag_data_true = self.analys_zigzag_data(list_y_candle_true)
+            x_zigzag_data_pred, y_zigzag_data_pred, type_zigzag_data_pred = self.analys_zigzag_data(list_y_candle_pred)
+            
+            list_zigzag_true = []
+            for i, x in enumerate(x_zigzag_data_true):
+                if x > self.args.seq_len:
+                    list_zigzag_true.append([x, y_zigzag_data_true[i], type_zigzag_data_true[i]])
+
+            list_zigzag_pred = []
+            for i, x in enumerate(x_zigzag_data_pred):
+                if x > self.args.seq_len:
+                    list_zigzag_pred.append([x, y_zigzag_data_pred[i], type_zigzag_data_pred[i]])
+
+            if len(list_zigzag_true) > 0 and len(list_zigzag_pred) > 0:
+                if list_zigzag_true[0] == list_zigzag_pred[0]:
+                    correction_trend = 1
+                else:
+                    correction_trend = 0
+            else:
+                correction_trend = 0
+
+            name_image = f"{index_candle}_{round(true_max_idx - pd_max_idx, 2)}_{round(true_min_idx - pd_min_idx, 2)}_{correction_trend}_{round(mae, 2)}"
+            visual(gt, pd, actual, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred, self.args.seq_len, os.path.join(folder_path, name_image + '.png'))
+            
+            path_correction_image = os.path.join(folder_path, 'correction')
+            if not os.path.exists(path_correction_image):
+                os.makedirs(path_correction_image)
+            path_image = os.path.join(path_correction_image, name_image + '.png')
+
+        return mae, list_zigzag_true, list_zigzag_pred, gt, pd, actual, path_image, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred
+    def percent(self, start, stop):
+        if start != 0:
+            percent = float(((float(start) - float(stop)) / float(start))) * 100
+            if percent > 0:
+                return percent
+            else:
+                return abs(percent)
+        return 1
+    def analys_zigzag_data(self, list_y_candle):
+        percent_filter = 0.4
+        candle_timedata_pass = 3
+        last_zigzag = 50
+        list_zigzag = []
+        for candle_timedata in range(len(list_y_candle)):
+            candle_data = list_y_candle[candle_timedata]
+            if len(list_zigzag) == 0:
+                list_zigzag = [[candle_timedata, candle_data[2],'low'], [candle_timedata, candle_data[1],'high']]
+            
+            if self.percent(list_zigzag[0][1], list_zigzag[1][1]) < percent_filter:
+                if list_zigzag[0][2] == "low":
+                    if list_zigzag[0][1] > candle_data[2]:
+                        list_zigzag.pop(0)
+                        list_zigzag.append([candle_timedata, candle_data[2], "low"])
+                    elif list_zigzag[1][1] < candle_data[1]:
+                        list_zigzag.pop()
+                        list_zigzag.append([candle_timedata, candle_data[1], "high"])
+                elif list_zigzag[0][2] == "high":
+                    if list_zigzag[0][1] < candle_data[1]:
+                        list_zigzag.pop(0)
+                        list_zigzag.append([candle_timedata, candle_data[1], "high"])
+                    elif list_zigzag[1][1] > candle_data[2]:
+                        list_zigzag.pop()
+                        list_zigzag.append([candle_timedata, candle_data[2], "low"])
+
+            else:
+                if list_zigzag[-1][2] == "low":
+                    if list_zigzag[-1][1] > candle_data[2]:
+                        list_zigzag.pop()
+                        list_zigzag.append([candle_timedata, candle_data[2], "low"])
+                    elif (
+                        self.percent(list_zigzag[-1][1], candle_data[1])
+                        > percent_filter
+                    ):
+                        if candle_timedata - list_zigzag[-1][0] >= candle_timedata_pass:
+                            list_zigzag.append(
+                                [candle_timedata, candle_data[1], "high"]
+                            )
+
+                elif list_zigzag[-1][2] == "high":
+                    if list_zigzag[-1][1] < candle_data[1]:
+                        list_zigzag.pop()
+                        list_zigzag.append([candle_timedata, candle_data[1], "high"])
+                    elif (
+                        self.percent(list_zigzag[-1][1], candle_data[2])
+                        > percent_filter
+                    ):
+                        if candle_timedata - list_zigzag[-1][0] >= candle_timedata_pass:
+                            list_zigzag.append(
+                                [candle_timedata, candle_data[2], "low"]
+                            )
+                    # elif self.percent(list_zigzag[-1][1], candle_data[2]) < percent_filter and candle_timedata - list_zigzag[-1][0] >= process_config.config[f"{self.time_frame}"]["zigzag"]["candle_timedata_update_zigzag"]:
+                    #     list_zigzag.append(
+                    #             [candle_timedata, candle_data[2], "low"]
+                    #         )
+
+        if len(list_zigzag) == 2:
+            if (
+                self.percent(list_zigzag[0][1], list_zigzag[1][1])
+                >= percent_filter
+            ):
+                x_data = [x[0] for x in list_zigzag]
+                y_data = [x[1] for x in list_zigzag]
+                type_data = [x[2] for x in list_zigzag]
+            else:
+                x_data, y_data, type_data = [], [], []
+        else:
+            x_data = [x[0] for x in list_zigzag]
+            y_data = [x[1] for x in list_zigzag]
+            type_data = [x[2] for x in list_zigzag]
+                
+        list_zigzag = list_zigzag[-last_zigzag:]
+        return x_data, y_data, type_data
+
     def test(self, setting):
         test_data, test_loader = self._get_data(flag='test')
         
@@ -335,6 +574,6 @@ class Exp_Informer(Exp_Basic):
         if self.args.inverse:
             outputs = dataset_object.inverse_transform(outputs)
         f_dim = -1 if self.args.features=='MS' else 0
-        batch_y = batch_y[:,-self.args.pred_len:,f_dim:].to(self.device)
+        batch_y = batch_y[:,-self.args.pred_len:,0:].to(self.device)
 
         return outputs, batch_y
