@@ -1,0 +1,6 @@
+test
+test_results
+env
+checkpoints
+.idea/
+*.pyc
