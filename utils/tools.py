@@ -27,8 +27,9 @@ def visual(true, preds, actual = None, x_zigzag_data_true = None, y_zigzag_data_
         plt.plot(actual, label='Actual', linewidth=3)
     
     if seg_len is not None and y_zigzag_data_true is not None:
-        y_seg = [min(y_zigzag_data_true), max(y_zigzag_data_true)]
-        plt.plot([seg_len, seg_len], y_seg, label='current', linewidth=2)
+        if len(y_zigzag_data_true) > 0:
+            y_seg = [min(y_zigzag_data_true), max(y_zigzag_data_true)]
+            plt.plot([seg_len, seg_len], y_seg, label='current', linewidth=2)
     
     if x_zigzag_data_true is not None and y_zigzag_data_true is not None:
         plt.plot(x_zigzag_data_true, y_zigzag_data_true, label='ZigZag True', linewidth=2)

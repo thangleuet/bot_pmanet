@@ -143,8 +143,9 @@ class Exp_Informer(Exp_Basic):
             total_loss.append(loss)
 
             # innvert scaling
-            pred = train_data.inverse_transform(pred)
-            true = train_data.inverse_transform(true)
+            if train_data.scaler:
+                pred = train_data.inverse_transform(pred)
+                true = train_data.inverse_transform(true)
 
             pred = pred.detach().cpu().numpy()
             true = true.detach().cpu().numpy()
@@ -155,7 +156,8 @@ class Exp_Informer(Exp_Basic):
                 os.makedirs(folder_result)
 
             if i % 1 == 0:
-                batch_x = train_data.inverse_transform(batch_x)
+                if train_data.scaler:
+                    batch_x = train_data.inverse_transform(batch_x)
                 input = batch_x.detach().cpu().numpy()
                 gt = np.concatenate((input[0, :, -1], true[0, :, -1]), axis=0)
                 pd = np.concatenate((input[0, :, -1], pred[0, :, -1]), axis=0)
@@ -264,12 +266,19 @@ class Exp_Informer(Exp_Basic):
         data_stamp = time_features(df_stamp, timeenc=0, freq=self.args.freq)
 
         self.data = df_raw_test[['Open', 'High', 'Low', 'volume', 'Close']].values
+        train_scaler = joblib.load('scaler.pkl')
+
+        train_data, train_loader = self._get_data(flag='train')
+        train_scaler = train_data.scaler
+
+        if train_scaler is not None:
+            self.data = train_scaler.transform(self.data)
 
         list_mae = []
         list_pattern_predict = []
 
         for i, data_candle in tqdm.tqdm(enumerate(self.data)):
-            mae, list_zigzag_true, list_zigzag_pred, gt, pred, actual, path_image, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred = self.inference(i, data_stamp)
+            mae, list_zigzag_true, list_zigzag_pred, gt, pred, actual, path_image, x_zigzag_data_true, y_zigzag_data_true, x_zigzag_data_pred, y_zigzag_data_pred = self.inference(i, data_stamp, train_scaler)
         #     list_mae.append(mae)
         #     if len(list_zigzag_pred) > 0:
         #         if len(list_pattern_predict) == 0:
@@ -322,7 +331,7 @@ class Exp_Informer(Exp_Basic):
         # print(f'Count confirm corection: {count_confirm_corection}/{count_confirm_pattern}')
         
 
-    def inference(self, index_candle, data_stamp):
+    def inference(self, index_candle, data_stamp, train_scaler):
         s_end = index_candle
         s_begin = s_end - self.args.seq_len
         r_begin = s_end - self.args.label_len
@@ -335,16 +344,19 @@ class Exp_Informer(Exp_Basic):
         batch_x_mark = data_stamp[s_begin:s_end]
         batch_y_mark = data_stamp[r_begin:r_end]
 
-        actual = self.data[s_begin:r_end][:, -1]
+        actual = train_scaler.inverse_transform(self.data[s_begin:r_end])[:, -1]
+
 
         batch_x = torch.from_numpy(batch_x).float().unsqueeze(0).to(self.device)
         batch_y = torch.from_numpy(batch_y).float().unsqueeze(0).to(self.device)
         batch_x_mark = torch.from_numpy(batch_x_mark).float().unsqueeze(0).to(self.device)
         batch_y_mark = torch.from_numpy(batch_y_mark).float().unsqueeze(0).to(self.device)
 
-        train_scaler = joblib.load('scaler.pkl')
         pred, true = self._process_one_batch(
                 train_scaler, batch_x, batch_y, batch_x_mark, batch_y_mark)
+        
+        pred = train_scaler.inverse_transform(pred)
+        true = train_scaler.inverse_transform(true)
 
         pred = pred.detach().cpu().numpy()
         true = true.detach().cpu().numpy()
@@ -354,6 +366,7 @@ class Exp_Informer(Exp_Basic):
             os.makedirs(folder_path)
 
         if visual:
+            batch_x = train_scaler.inverse_transform(batch_x)
             input = batch_x.detach().cpu().numpy()
             gt = np.concatenate((input[0, :, -1], true[0, :self.args.pred_len, -1]), axis=0)
             pd = np.concatenate((input[0, :, -1], pred[0, :self.args.pred_len, -1]), axis=0)
